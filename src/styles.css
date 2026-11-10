@@ -59,3 +59,4 @@ tbody tr{cursor:pointer}tbody tr:hover{background:var(--bg)}
 .shots{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(260px,1fr))}
 .shots figure{margin:0;background:var(--surf);border:1px solid var(--line);border-radius:10px;overflow:hidden}
 .shots img{width:100%;display:block;aspect-ratio:4/3;object-fit:cover}.shots figcaption{padding:8px 10px}
+.silence{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));z-index:10;background:#fff;color:var(--crit);font-weight:700;padding:14px 22px;border-radius:12px;border:2px solid var(--crit)}

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { DEMO, get, wsUrl } from "./api.js";
+import { DEMO, get } from "./api.js";
 
 /* Payload shape (same from GET /api/v1/status and the WebSocket):
 { gateway:{online}, packets:{total,last_ts,rssi},
@@ -33,28 +33,25 @@ export function useLive() {
   const retry = useRef(0);
 
   useEffect(() => {
-    if (DEMO) { setLive(true); return demoStream(setData); }
-    let ws, timer, closed = false;
-    get("/api/v1/status").then(setData).catch(() => {});
-    const connect = () => {
-      ws = new WebSocket(wsUrl());
-      ws.onopen = () => { setLive(true); retry.current = 0; };
-      ws.onmessage = (e) => setData(JSON.parse(e.data));
-      ws.onclose = () => {
-        setLive(false);
-        if (!closed) timer = setTimeout(connect, Math.min(15000, 1000 * 2 ** retry.current++));
-      };
-    };
-    connect();
-    return () => { closed = true; clearTimeout(timer); ws && ws.close(); };
-  }, []);
-
-  return { data, live };
+      let stop = false;
+      const poll = () => get("/api/v1/status")
+        .then((d) => { if (!stop) { setData(d); setLive(true); } })
+        .catch(() => { if (!stop) setLive(false); });
+      poll();
+      const h = setInterval(poll, 3000);
+      return () => { stop = true; clearInterval(h); };
+    }, []);
 }
 
 /* History: GET /api/v1/history?device=&range=1h|24h|7d -> [{t,co,temp,pm25,pm10,smoke}] */
 export async function loadHistory(device, range, metric) {
-  if (!DEMO) return get(`/api/v1/history?device=${device}&range=${range}`);
+    if (!DEMO) {
+      const rows = await get(`/api/v1/readings?device_id=${device}&range=${range}`);
+      return rows
+        .map((x) => ({ t: x.ts, co: x.co_ppm, temp: x.temp_c, pm25: x.pm25, pm10: x.pm10 }))
+        .filter((x) => x[metric] != null)
+        .map((x) => ({ ...x, [metric]: Number(x[metric]) }));
+    }
   const n = range === "1h" ? 60 : range === "24h" ? 96 : 168;
   const base = { co: 5, temp: 22, pm25: 9, pm10: 15 }[metric];
   return Array.from({ length: n }, (_, i) => ({ t: i, [metric]: Math.max(0, base * (1 + .15 * Math.sin(i / n * 6.28 * (range === "7d" ? 7 : 1))) + r(-.3, .3) * base * .3) }));

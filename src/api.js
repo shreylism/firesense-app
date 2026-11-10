@@ -35,6 +35,6 @@ export async function login(password) {
 }
 export function logout() { token = ""; sessionStorage.removeItem("fs_token"); }
 
+const HOURS = { "1h": 1, "24h": 24, "7d": 168 };
 export const csvUrl = (device, range) =>
-  `${API}/api/v1/export.csv?device=${device}&range=${range}`;
-export const wsUrl = () => `${WS}/ws/live`;
+  `${API}/api/v1/readings/export.csv?device_id=${device}&hours=${HOURS[range]}`;

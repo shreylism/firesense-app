@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import { useLive, loadHistory } from "./useLive.js";
 import { DEMO, csvUrl, login, logout, isAdmin, get, put } from "./api.js";
+import { startAlarm, stopAlarm, unlockAudio } from "./alarm.js";
+import { enableAlerts } from "./push.js";
 
-const LEVEL = ["Normal", "Warning", "Critical"];
-const CLS = ["", "warn", "crit"];
+const LEVEL = ["Normal", "Warning", "Fire suspected", "Fire alert"];
+const CLS = ["", "warn", "crit", "crit"];
 const METRICS = { co: "CO", temp: "Temperature", pm25: "PM2.5", pm10: "PM10" };
 const RANGES = { "1h": "1 hour", "24h": "24 hours", "7d": "7 days" };
-const TABS = [["overview", "Overview", "◧"], ["sensors", "Sensors", "◉"], ["history", "History", "∿"], ["alerts", "Alerts", "▲"], ["camera", "Camera", "◙"], ["devices", "Devices", "▣"], ["admin", "Admin", "⚙"]];
+const TABS = [["overview", "Overview", "◧"], ["sensors", "Sensors", "◉"], ["history", "History", "∿"], ["alerts", "Alerts", "▲"], ["devices", "Devices", "▣"]];
 
 export default function App() {
   const { data, live } = useLive();
@@ -20,6 +22,16 @@ export default function App() {
   const worst = devices.filter((d) => d.online).reduce((a, d) => (d.level > (a?.level ?? 0) ? d : a), null);
   const cur = devices.find((d) => d.id === sel) ?? devices[0];
   const go = (t) => { setTab(t); location.hash = t; };
+    const [silenced, setSilenced] = useState(false);
+    const alarmOn = (worst?.level ?? 0) >= 2;
+    useEffect(() => {
+      window.addEventListener("pointerdown", unlockAudio, { once: true });
+    }, []);
+    useEffect(() => {
+      if (alarmOn && !silenced) startAlarm("Fire detected at " + worst.name + ". Please evacuate.");
+      else stopAlarm();
+      if (!alarmOn && silenced) setSilenced(false);
+    }, [alarmOn, silenced]);
 
   useEffect(() => {
     if (!devices.length) return;
@@ -29,7 +41,7 @@ export default function App() {
       if (prev[d.id] !== undefined && d.level !== prev[d.id]) {
         const text = d.level === 0 ? "Back to normal" : `CO ${d.co.toFixed(0)} ppm, PM2.5 ${d.pm25.toFixed(0)}${d.smoke ? ", smoke detected" : ""}`;
         add.push({ t: new Date(), name: d.name, level: d.level, text });
-        if (d.level === 2) { setToast(`Fire alert: ${d.name}, ${text}`); setTimeout(() => setToast(""), 6000); }
+        if (d.level >= 2) { setToast(`Fire alert: ${d.name}, ${text}`); setTimeout(() => setToast(""), 6000); }
       }
     });
     setPrev(next);
@@ -46,10 +58,10 @@ export default function App() {
             <button key={k} className={tab === k ? "on" : ""} onClick={() => go(k)}><span aria-hidden="true">{ic}</span> {label}{k === "alerts" && open > 0 && <b className="badge">{open}</b>}</button>
           ))}
         </nav>
-        <div className="sidefoot"><span className={"pill " + (live ? "live" : "off")}><span className="dot" />{live ? "Live" : "Reconnecting"}</span></div>
+        <div className="sidefoot"><AlertsButton /><span className={"pill " + (live ? "live" : "off")}><span className="dot" />{live ? "Live" : "Reconnecting"}</span></div>
       </aside>
       <main>
-        <div className="top"><h2 className="title">{TABS.find((t) => t[0] === tab)[1]}</h2><Banner worst={worst} compact /></div>
+        <div className="top"><h2 className="title">{(TABS.find((t) => t[0] === tab) || TABS[0])[1]}</h2><Banner worst={worst} compact /></div>
         {!data ? <p className="sub">Waiting for data…</p> : (
           <>
             {tab === "overview" && (<>
@@ -70,6 +82,7 @@ export default function App() {
         )}
       </main>
       {toast && <div className="toast" role="alert">{toast}</div>}
+      {alarmOn && !silenced && <button className="silence" onClick={() => setSilenced(true)}>Silence alarm</button>}
     </div>
   );
 }
@@ -141,7 +154,7 @@ function Banner({ worst, compact }) {
   const l = worst?.level ?? 0;
   return (
     <div className={"banner " + CLS[l]}>
-      <span><b>{["All clear", "Fire warning", "Fire alert"][l]}</b>{!compact && <><br /><span className="sub" style={{ color: "inherit" }}>{["All online sensors read normal.", "Readings are above warning limits.", "Critical readings. Check the area now."][l]}</span></>}</span>
+      <span><b>{["All clear", "Fire warning", "Fire suspected", "Fire alert"][l]}</b>{!compact && <><br /><span className="sub" style={{ color: "inherit" }}>{["All online sensors read normal.", "Readings are above warning limits.", "Two sensor types at fire level. Check the area now.", "Multiple sensors at fire level. Evacuate and check now."][l]}</span></>}</span>
       <span className="mono">{l ? worst.name : ""}</span>
     </div>
   );
@@ -151,10 +164,10 @@ function Cards({ d }) {
   const C = ({ label, v, unit, cls }) => <div className={"card " + (cls || "")}><div className="lbl">{label}</div><div className="val mono">{v}<small>{unit}</small></div></div>;
   return (
     <div className="grid">
-      <C label="Carbon monoxide" v={d.co.toFixed(1)} unit="ppm" cls={d.co >= 100 ? "crit" : d.co >= 35 ? "warn" : ""} />
-      <C label="Temperature" v={d.temp.toFixed(1)} unit="°C" cls={d.temp >= 45 ? "crit" : ""} />
-      <C label="PM2.5" v={d.pm25.toFixed(0)} unit="µg/m³" cls={d.pm25 >= 55 ? "warn" : ""} />
-      <C label="PM10" v={d.pm10.toFixed(0)} unit="µg/m³" />
+      <C label="Carbon monoxide" v={d.co.toFixed(1)} unit="ppm" cls={d.co >= 50 ? "crit" : d.co >= 25 ? "warn" : ""} />
+      <C label="Temperature" v={d.temp.toFixed(1)} unit="°C" cls={d.temp >= 65 ? "crit" : d.temp >= 55 ? "warn" : ""} />
+      <C label="PM2.5" v={d.pm25.toFixed(0)} unit="µg/m³" cls={d.pm25 >= 200 ? "crit" : d.pm25 >= 100 ? "warn" : ""} />
+      <C label="PM10" v={d.pm10.toFixed(0)} unit="µg/m³" cls={d.pm10 >= 250 ? "crit" : d.pm10 >= 150 ? "warn" : ""} />
       <div className={"card " + (d.smoke ? "crit" : "")}><div className="lbl">Smoke / fire</div><div className="val" style={{ marginTop: 4 }}><span className={"pill " + (d.smoke ? "crit" : "")}>{d.smoke ? "Detected" : "None"}</span></div></div>
     </div>
   );
@@ -178,7 +191,7 @@ function History({ device, latest }) {
   const x = (i) => L + (W - L - 6) * i / Math.max(pts.length - 1, 1);
   const y = (v) => T + (H - T - B) * (1 - v / mx);
   const path = pts.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(" ");
-  const lim = metric === "co" ? 35 : metric === "pm25" ? 55 : null;
+  const lim = { co: 25, temp: 55, pm25: 100, pm10: 150 }[metric] ?? null;
   const lbl = { "1h": ["60 min ago", "30", "now"], "24h": ["24 h ago", "12 h", "now"], "7d": ["7 days ago", "3.5 d", "now"] }[range];
 
   return (
@@ -248,4 +261,17 @@ function Camera() {
   if (DEMO) return <div className="card"><h2>Camera</h2><p className="sub">Snapshots appear here once the backend is connected. The ESP32-CAM uploads one every 5 minutes and one right after a fire alert.</p></div>;
   if (!shots.length) return <div className="card"><p className="sub">No snapshots yet.</p></div>;
   return <div className="shots">{shots.map((s) => <figure key={s.url}><a href={s.url} target="_blank" rel="noreferrer"><img src={s.url} alt={"Snapshot from " + s.device_id} loading="lazy" /></a><figcaption className="sub mono">{s.device_id} · {new Date(s.ts).toLocaleString()}</figcaption></figure>)}</div>;
+}
+
+function AlertsButton() {
+  const isOn = () => { try { return "Notification" in window && Notification.permission === "granted" && localStorage.getItem("alerts") === "on"; } catch { return false; } };
+  const [ok, setOk] = useState(isOn());
+  const [msg, setMsg] = useState("");
+  return (
+    <div style={{ marginBottom: 8 }}>
+      {ok ? <span className="pill">Alerts on</span>
+        : <button className="on" onClick={async () => { unlockAudio(); try { await enableAlerts(); setOk(true); setMsg(""); } catch (e) { setMsg(e.message); } }}>Enable alerts</button>}
+      {msg && <p className="sub">{msg}</p>}
+    </div>
+  );
 }

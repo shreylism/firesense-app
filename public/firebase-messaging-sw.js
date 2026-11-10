@@ -5,11 +5,17 @@ const messaging = firebase.messaging();
 messaging.onBackgroundMessage(function (p) {
   const d = p.data || {};
   self.registration.showNotification(d.title || 'FireSense', {
-    body: d.body || '', tag: 'fire', requireInteraction: true,
-    vibrate: [300, 150, 300], icon: 'icon-192.png'
+    body: d.body || '',
+    tag: 'firesense-fire',
+    renotify: true,             // buzz again even if an older alert is still showing
+    requireInteraction: true,   // stays until the user dismisses it
+    silent: false,
+    vibrate: [600, 200, 600, 200, 600, 200, 1000],
+    icon: 'icon-192.png',
+    badge: 'icon-192.png'
   });
 });
 self.addEventListener('notificationclick', function (e) {
   e.notification.close();
-  e.waitUntil(clients.openWindow('./'));
+  e.waitUntil(clients.openWindow(self.registration.scope));
 });
