@@ -51,7 +51,7 @@ input[type=checkbox]{width:20px;height:20px;accent-color:var(--ac)}
 #toast{position:fixed;left:50%;bottom:80px;transform:translateX(-50%);background:#222;color:#fff;padding:8px 14px;border-radius:20px;font-size:.85em;z-index:60;opacity:0;transition:.3s;pointer-events:none;max-width:90%;text-align:center}
 #toast.on{opacity:1}
 </style><link rel="manifest" href="manifest.json"><meta name="theme-color" content="#d32f2f">
-</head>
+<link rel="manifest" href="manifest.json"><meta name="theme-color" content="#c2410c"><link rel="apple-touch-icon" href="icon-192.png"></head>
 <body>
 <div id="app">
  <header><b>🔥 FireGuard</b><div class="chips" id="chips"></div></header>
@@ -60,6 +60,8 @@ input[type=checkbox]{width:20px;height:20px;accent-color:var(--ac)}
 </div>
 <div id="ov" hidden></div>
 <div id="toast"></div>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js"></script>
 <script>
 const CFG={apiKey:"AIzaSyARCJE33mjlRhmls89gY2DSkyb6EfnfRJw",authDomain:"g63-fireguard.firebaseapp.com",databaseURL:"https://g63-fireguard-default-rtdb.asia-southeast1.firebasedatabase.app",projectId:"g63-fireguard",storageBucket:"g63-fireguard.firebasestorage.app",messagingSenderId:"578559262203",appId:"1:578559262203:web:cb3c7286c2ad30c6651f5e"};
 const DEV=false; // set to false for the final prototype
@@ -107,7 +109,7 @@ function home(){const r=R[S.sel],c=r.off?'warn':SC[r.st];
  return `
  
  ${!S.mains?'<div class="card mu">🔋 Power cut. Running on backup battery with automatic switch-over.</div>':''}
- <div class="card hero ${c}"><div class="mu" style="color:inherit">${r.n}</div><div class="big">${r.off&&r.st!=='fire'?'No signal':LB[r.st]}</div><div class="mu" style="color:inherit">${r.off?'⚠️ Node offline · last seen '+Math.round((Date.now()-r.seen)/1000)+' s ago':'Last seen just now · LoRa '+r.rssi+' dBm'}</div></div>
+ ${alertBanner()}<div class="card hero ${c}"><div class="mu" style="color:inherit">${r.n}</div><div class="big">${r.off&&r.st!=='fire'?'No signal':LB[r.st]}</div><div class="mu" style="color:inherit">${r.off?'⚠️ Node offline · last seen '+Math.round((Date.now()-r.seen)/1000)+' s ago':'Last seen just now · LoRa '+r.rssi+' dBm'}</div></div>
  
  <div class="card">${sen.map(s=>`<div class="row"><div style="flex:1"><div>${s[0]}</div><div class="bar"><i class="${s[3]?'t':''}" style="width:${Math.min(100,s[1]/s[4]*100)}%"></i></div></div><div style="margin-left:12px;text-align:right"><b>${s[1]==null?'—':s[1].toFixed(0)}${s[2]}</b><div class="mu">${s[1]==null?'No data':s[3]?'Triggered':'Normal'}</div></div></div>`).join('')}
   <div class="row"><div>Smoke · SPS30 PM10</div><div><b>${r.pm10==null?'—':r.pm10.toFixed(0)} µg/m³</b> <span class="mu">${r.pm10==null?'No data':''}</span></div></div><div class="row"><div>CO · ZE07 (supporting)</div><div><b>${r.co==null?'—':r.co.toFixed(0)} ppm</b> <span class="mu">${r.co==null?'No data':r.co>TH.c?'High':'Normal'}</span></div></div>
@@ -126,7 +128,7 @@ function rooms(){return R.map((r,i)=>`<div class="card ${SC[r.st]}" style="borde
 function logv(){return S.log.length?S.log.map(l=>`<div class="log ${l.k==='fire'?'fire':l.k==='warn'?'warn':'ok'}" style="--c:var(--${l.k==='fire'?'fi':l.k==='warn'?'wa':'ok'})"><div class="mu">${l.time}</div>${l.m}</div>`).join(''):'<div class="card mu">No events yet. Start a simulation on the Home tab.</div>'}
 function tg(k,l){return `<label class="row">${l}<input type="checkbox" ${S[k]?'checked':''} onchange="S.${k}=this.checked;${k==='big'?"document.documentElement.classList.toggle('big',this.checked)":''}"></label>`}
 function setv(){return `<div class="card"><b>Accessible alerts</b><div class="mu">Pick any combination so deaf and blind users are covered</div>${tg('flash','👁️ Flashing screen')}${tg('sound','🔊 Siren sound')}${tg('vib','📳 Vibration')}${tg('voice','🗣️ Voice announcement')}${tg('big','🔠 Large text')}</div>
- <div class="card"><b>Data</b><div class="row"><span>Historical readings</span><a href="${API}/api/v1/readings/export.csv?device_id=${DEVICE}&hours=168" target="_blank">Download CSV</a></div></div><div class="card"><b>Emergency contacts</b><div class="row"><span>Fire brigade</span><a href="tel:101">101</a></div><div class="row"><span>Emergency</span><a href="tel:112">112</a></div></div>
+ <div class="card"><b>Data</b><div class="row"><span>Historical readings</span><a href="${API}/api/v1/readings/export.csv?device_id=${DEVICE}&hours=168" target="_blank">Download CSV</a></div></div><div class="card"><b>Phone alerts</b><div class="mu" style="margin:6px 0">${S.alMsg||'Get a notification on this phone when a fire is detected, even if the app is closed.'}</div><button class="b p" style="width:100%" onclick="enableAlerts()">🔔 Enable alerts</button></div><div class="card"><b>Emergency contacts</b><div class="row"><span>Fire brigade</span><a href="tel:101">101</a></div><div class="row"><span>Emergency</span><a href="tel:112">112</a></div></div>
  <div class="card"><b>Device</b><div class="row"><span>Sensor logic</span><span class="mu">AND of Flame + Smoke + Temp</span></div><div class="row"><span>Window</span><span class="mu">10 s</span></div><div class="row"><span>Heartbeat</span><span class="mu">90 s</span></div>${tg('sms','📩 SMS backup if internet is down')}</div>
  ${DEV?`<button class="b p" style="width:100%" onclick="S.alert=S.sel;showOv();startAlarm()">🚨 Test alarm</button>`:''}`}
 function view(f){const m=$('#main');if(S.tab==='set'&&!f)return;m.innerHTML={home,rooms,log:logv,set:setv,hist:histv}[S.tab]()}
@@ -184,6 +186,32 @@ function startLive(){S.live=true;
    else r.off=true;
   }catch(e){S.wifi=false}finally{busy=false}}
  poll();setInterval(poll,3000)}
+
+const PUSH_API='https://firesense-backend.onrender.com';
+const VAPID='BDAqJ_RjyRbOK4EE4bYpIgc99Kf4ftlC1w3jnTzanhXAOafO9mH5LxsjfKbkpd_70nWYjhQAtbtKWPP6A98kmZA';
+const FCFG={apiKey:"AIzaSyARCJE33mjlRhmls89gY2DSkyb6EfnfRJw",authDomain:"g63-fireguard.firebaseapp.com",projectId:"g63-fireguard",messagingSenderId:"578559262203",appId:"1:578559262203:web:cb3c7286c2ad30c6651f5e"};
+function setAl(m){S.alMsg=m;view(true)}
+function alertBanner(){
+ let ok=false;try{ok='Notification' in window&&Notification.permission==='granted'&&localStorage.getItem('alerts')==='on'}catch(e){}
+ if(ok)return '';
+ return '<div class="card"><b>Fire alerts are off</b><div class="mu" style="margin:6px 0">'+(S.alMsg||'Tap to get a notification on this phone when a fire is detected, even with the app closed.')+'</div><button class="b p" style="width:100%" onclick="enableAlerts()">Enable alerts</button></div>'}
+async function enableAlerts(){
+ try{
+  if(!('Notification' in window)||!('serviceWorker' in navigator)){setAl('This browser cannot show notifications. On iPhone, tap Share, then Add to Home Screen, and open the app from its icon.');return}
+  const p=await Notification.requestPermission();
+  if(p!=='granted'){setAl('Notifications are blocked. Allow them for this site in your phone settings, then try again.');return}
+  if(!firebase.apps.length)firebase.initializeApp(FCFG);
+  const reg=await navigator.serviceWorker.register('firebase-messaging-sw.js');
+  await navigator.serviceWorker.ready;
+  const m=firebase.messaging();
+  const tok=await m.getToken({vapidKey:VAPID,serviceWorkerRegistration:reg});
+  if(!tok)throw new Error('no token received');
+  const r=await fetch(PUSH_API+'/api/v1/push/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:tok})});
+  if(!r.ok)throw new Error('server said '+r.status);
+  try{localStorage.setItem('alerts','on')}catch(e){}
+  m.onMessage(x=>toast('Alert: '+((x.data&&x.data.title)||'check the app')));
+  setAl('Alerts are on for this phone.');
+ }catch(e){setAl('Could not enable alerts: '+e.message)}}
 nav();chips();view(true);setInterval(tick,1000);
 try{startLive()}catch(e){S.live=false;toast('Firebase not loaded, demo mode')}
 const DV={idle:[27,12,2,4,0],steam:[62,190,3,6,1],fire:[88,650,62,88,2]};
