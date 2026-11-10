@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { DEMO, get } from "./api.js";
 
 /* Payload shape (same from GET /api/v1/status and the WebSocket):
@@ -30,17 +30,26 @@ function demoStream(push) {
 export function useLive() {
   const [data, setData] = useState(null);
   const [live, setLive] = useState(false);
-  const retry = useRef(0);
 
   useEffect(() => {
-      let stop = false;
-      const poll = () => get("/api/v1/status")
+    // Demo mode: simulated stream, no backend needed
+    if (DEMO) {
+      setLive(true);
+      return demoStream(setData);
+    }
+
+    // Real mode: poll the backend every 3 seconds
+    let stop = false;
+    const poll = () =>
+      get("/api/v1/status")
         .then((d) => { if (!stop) { setData(d); setLive(true); } })
         .catch(() => { if (!stop) setLive(false); });
-      poll();
-      const h = setInterval(poll, 3000);
-      return () => { stop = true; clearInterval(h); };
-    }, []);
+    poll();
+    const h = setInterval(poll, 3000);
+    return () => { stop = true; clearInterval(h); };
+  }, []);
+
+  return { data, live };
 }
 
 /* History: GET /api/v1/history?device=&range=1h|24h|7d -> [{t,co,temp,pm25,pm10,smoke}] */
