@@ -8,7 +8,7 @@ const LEVEL = ["Normal", "Warning", "Fire suspected", "Fire alert"];
 const CLS = ["", "warn", "crit", "crit"];
 const METRICS = { co: "CO", temp: "Temperature", pm25: "PM2.5", pm10: "PM10" };
 const RANGES = { "1h": "1 hour", "24h": "24 hours", "7d": "7 days" };
-const TABS = [["overview", "Overview", "◧"], ["sensors", "Sensors", "◉"], ["history", "History", "∿"], ["alerts", "Alerts", "▲"], ["devices", "Devices", "▣"]];
+const TABS = [["overview", "Overview", "◧"], ["sensors", "Sensors", "◉"], ["history", "History", "∿"], ["alerts", "Alerts", "▲"], ["camera", "Camera", "▣"], ["devices", "Devices", "▣"]];
 
 export default function App() {
   const { data, live } = useLive();
@@ -253,14 +253,107 @@ function Admin({ admin, setAdmin, sel }) {
 
 function Camera() {
   const [shots, setShots] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
   useEffect(() => {
-    if (DEMO) return;
-    const run = () => get("/api/v1/camera/snapshots?limit=24").then(setShots).catch(() => {});
-    run(); const h = setInterval(run, 15000); return () => clearInterval(h);
+    if (DEMO) {
+      setLoading(false);
+      return;
+    }
+
+    let active = true;
+    const run = async () => {
+      try {
+        const response = await get("/api/v1/camera/snapshots?limit=24");
+        if (!active) return;
+        // Backend returns { items: [...], count: n }.
+        setShots(Array.isArray(response) ? response : (response.items || []));
+        setError("");
+      } catch (e) {
+        if (active) setError("Could not load camera snapshots. Please check the backend connection.");
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+
+    run();
+    const h = setInterval(run, 15000);
+    return () => {
+      active = false;
+      clearInterval(h);
+    };
   }, []);
-  if (DEMO) return <div className="card"><h2>Camera</h2><p className="sub">Snapshots appear here once the backend is connected. The ESP32-CAM uploads one every 5 minutes and one right after a fire alert.</p></div>;
-  if (!shots.length) return <div className="card"><p className="sub">No snapshots yet.</p></div>;
-  return <div className="shots">{shots.map((s) => <figure key={s.url}><a href={s.url} target="_blank" rel="noreferrer"><img src={s.url} alt={"Snapshot from " + s.device_id} loading="lazy" /></a><figcaption className="sub mono">{s.device_id} · {new Date(s.ts).toLocaleString()}</figcaption></figure>)}</div>;
+
+  if (DEMO) {
+    return (
+      <div className="card">
+        <h2>Camera</h2>
+        <p className="sub">Camera snapshots will appear here when the live backend is connected.</p>
+      </div>
+    );
+  }
+
+  if (loading) return <div className="card"><h2>Camera</h2><p className="sub">Loading camera snapshots…</p></div>;
+
+  if (!shots.length) {
+    return (
+      <div className="card">
+        <h2>Camera</h2>
+        {error ? <p className="sub">{error}</p> : <p className="sub">No camera snapshots received yet.</p>}
+      </div>
+    );
+  }
+
+  const latest = shots[0];
+  const capturedAt = (s) => s.captured_at || s.ts || s.timestamp;
+  const percent = (v) => Number.isFinite(Number(v)) ? `${Number(v).toFixed(1)}%` : "—";
+
+  return (
+    <div>
+      <div className="card" style={{ marginBottom: 12 }}>
+        <div className="row">
+          <h2>Latest camera snapshot</h2>
+          <span className={"pill " + (latest.alarm ? "crit" : "")}>{latest.alarm ? "ALARM ON" : "No alarm"}</span>
+        </div>
+        {latest.url && (
+          <a href={latest.url} target="_blank" rel="noreferrer">
+            <img
+              src={latest.url}
+              alt={"Latest snapshot from " + (latest.device_id || "camera")}
+              style={{ display: "block", width: "100%", maxHeight: 440, objectFit: "contain", borderRadius: 8, background: "var(--line)" }}
+            />
+          </a>
+        )}
+        <div className="grid" style={{ marginTop: 12 }}>
+          <div><div className="lbl">Prediction</div><b>{latest.prediction || "—"}</b></div>
+          <div><div className="lbl">Confidence</div><b className="mono">{percent(latest.confidence)}</b></div>
+          <div><div className="lbl">Fire probability</div><b className="mono">{percent(latest.fire_probability)}</b></div>
+          <div><div className="lbl">Device</div><b className="mono">{latest.device_id || "—"}</b></div>
+        </div>
+        <p className="sub mono">Captured: {capturedAt(latest) ? new Date(capturedAt(latest)).toLocaleString() : "Time unavailable"}</p>
+      </div>
+
+      <div className="card">
+        <h2>Camera history</h2>
+        {error && <p className="sub">{error}</p>}
+        <div className="shots">
+          {shots.map((s) => (
+            <figure key={s.id || s.url}>
+              {s.url && <a href={s.url} target="_blank" rel="noreferrer">
+                <img src={s.url} alt={"Snapshot from " + (s.device_id || "camera")} loading="lazy" />
+              </a>}
+              <figcaption className="sub mono">
+                {s.device_id || "Camera"} · {capturedAt(s) ? new Date(capturedAt(s)).toLocaleString() : "Time unavailable"}
+                <br />{s.prediction || "—"} · Confidence: {percent(s.confidence)}
+                <br />Fire: {percent(s.fire_probability)} · {s.alarm ? "ALARM" : "No alarm"}
+              </figcaption>
+            </figure>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function AlertsButton() {
