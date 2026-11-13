@@ -308,6 +308,8 @@ function Camera() {
   const latest = shots[0];
   const capturedAt = (s) => s.captured_at || s.ts || s.timestamp;
   const percent = (v) => Number.isFinite(Number(v)) ? `${Number(v).toFixed(1)}%` : "—";
+  const ageMin = capturedAt(latest) ? (Date.now() - new Date(capturedAt(latest)).getTime()) / 60000 : null;
+  const ageText = ageMin === null ? "" : ageMin < 120 ? `${Math.round(ageMin)} min` : `${(ageMin / 60).toFixed(1)} h`;
 
   return (
     <div>
@@ -331,7 +333,7 @@ function Camera() {
           <div><div className="lbl">Fire probability</div><b className="mono">{percent(latest.fire_probability)}</b></div>
           <div><div className="lbl">Device</div><b className="mono">{latest.device_id || "—"}</b></div>
         </div>
-        <p className="sub mono">Captured: {capturedAt(latest) ? new Date(capturedAt(latest)).toLocaleString() : "Time unavailable"}</p>
+        <p className="sub mono">Captured: {capturedAt(latest) ? new Date(capturedAt(latest)).toLocaleString() : "Time unavailable"}{" "}           {ageMin !== null && ageMin > 5 && <span className="pill off">No new snapshot for {ageText}</span>}</p>
       </div>
 
       <div className="card">
