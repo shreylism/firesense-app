@@ -8,33 +8,52 @@ export const isAdmin = () => !!token;
 const headers = () => (token ? { Authorization: `Bearer ${token}` } : {});
 
 export async function get(path) {
-  const r = await fetch(API + path, { headers: headers() });
+  const r = await fetch(API + path, {
+    headers: headers(),
+    cache: "no-store"
+  });
   if (!r.ok) throw new Error(r.status);
   return r.json();
 }
+
 export async function put(path, body) {
   const r = await fetch(API + path, {
     method: "PUT",
-    headers: { "Content-Type": "application/json", ...headers() },
+    headers: {
+      "Content-Type": "application/json",
+      ...headers()
+    },
     body: JSON.stringify(body),
   });
   if (!r.ok) throw new Error(r.status);
   return r.json();
 }
+
 export async function login(password) {
-  if (DEMO) { token = "demo"; return true; }
+  if (DEMO) {
+    token = "demo";
+    return true;
+  }
+
   const r = await fetch(API + "/api/v1/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ password }),
   });
+
   if (!r.ok) return false;
+
   token = (await r.json()).access_token;
   sessionStorage.setItem("fs_token", token);
   return true;
 }
-export function logout() { token = ""; sessionStorage.removeItem("fs_token"); }
+
+export function logout() {
+  token = "";
+  sessionStorage.removeItem("fs_token");
+}
 
 const HOURS = { "1h": 1, "24h": 24, "7d": 168 };
+
 export const csvUrl = (device, range) =>
   `${API}/api/v1/readings/export.csv?device_id=${device}&hours=${HOURS[range]}`;
