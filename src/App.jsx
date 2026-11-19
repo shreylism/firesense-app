@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useLive, loadHistory } from "./useLive.js";
-import { DEMO, csvUrl, login, logout, isAdmin, get, put } from "./api.js";
+import { API, DEMO, csvUrl, login, logout, isAdmin, get, put } from "./api.js";
 import { startAlarm, stopAlarm, unlockAudio } from "./alarm.js";
 import { enableAlerts } from "./push.js";
 
@@ -278,7 +278,7 @@ function Camera() {
     };
 
     run();
-    const h = setInterval(run, 15000);
+    const h = setInterval(run, 5000);
     return () => {
       active = false;
       clearInterval(h);
@@ -306,6 +306,12 @@ function Camera() {
   }
 
   const latest = shots[0];
+  const snapshotImageUrl = (shot) => {
+    const raw = shot.image_url || shot.url;
+    if (!raw) return "";
+    return raw.startsWith("/") ? `${API}${raw}` : raw;
+  };
+  const latestImageUrl = snapshotImageUrl(latest);
   const capturedAt = (s) => s.captured_at || s.ts || s.timestamp;
   const percent = (v) => Number.isFinite(Number(v)) ? `${Number(v).toFixed(1)}%` : "—";
   const ageMin = capturedAt(latest) ? (Date.now() - new Date(capturedAt(latest)).getTime()) / 60000 : null;
@@ -318,10 +324,10 @@ function Camera() {
           <h2>Latest camera snapshot</h2>
           <span className={"pill " + (latest.alarm ? "crit" : "")}>{latest.alarm ? "ALARM ON" : "No alarm"}</span>
         </div>
-        {latest.url && (
-          <a href={latest.url} target="_blank" rel="noreferrer">
+        {latestImageUrl && (
+          <a href={latestImageUrl} target="_blank" rel="noreferrer">
             <img
-              src={latest.url}
+              src={latestImageUrl}
               alt={"Latest snapshot from " + (latest.device_id || "camera")}
               style={{ display: "block", width: "100%", maxHeight: 440, objectFit: "contain", borderRadius: 8, background: "var(--line)" }}
             />
@@ -341,9 +347,9 @@ function Camera() {
         {error && <p className="sub">{error}</p>}
         <div className="shots">
           {shots.map((s) => (
-            <figure key={s.id || s.url}>
-              {s.url && <a href={s.url} target="_blank" rel="noreferrer">
-                <img src={s.url} alt={"Snapshot from " + (s.device_id || "camera")} loading="lazy" />
+            <figure key={s.id || s.image_url || s.url}>
+              {snapshotImageUrl(s) && <a href={snapshotImageUrl(s)} target="_blank" rel="noreferrer">
+                <img src={snapshotImageUrl(s)} alt={"Snapshot from " + (s.device_id || "camera")} loading="lazy" />
               </a>}
               <figcaption className="sub mono">
                 {s.device_id || "Camera"} · {capturedAt(s) ? new Date(capturedAt(s)).toLocaleString() : "Time unavailable"}
