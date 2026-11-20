@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { useLive, loadHistory } from "./useLive.js";
-import { API, DEMO, csvUrl, login, logout, isAdmin, get, put } from "./api.js";
+import { useLive, loadHistory, DEMO_TH } from "./useLive.js";
+import { API, DEMO, csvUrl, login, logout, isAdmin, get } from "./api.js";
 import { startAlarm, stopAlarm, unlockAudio } from "./alarm.js";
 import { enableAlerts } from "./push.js";
 
@@ -8,7 +8,7 @@ const LEVEL = ["Normal", "Warning", "Fire suspected", "Fire alert"];
 const CLS = ["", "warn", "crit", "crit"];
 const METRICS = { co: "CO", temp: "Temperature", pm25: "PM2.5", pm10: "PM10" };
 const RANGES = { "1h": "1 hour", "24h": "24 hours", "7d": "7 days" };
-const TABS = [["overview", "Overview", "◧"], ["sensors", "Sensors", "◉"], ["history", "History", "∿"], ["alerts", "Alerts", "▲"], ["camera", "Camera", "▣"], ["devices", "Devices", "▣"]];
+const TABS = [["overview", "Overview", "◧"], ["sensors", "Sensors", "◉"], ["history", "History", "∿"], ["alerts", "Alerts", "▲"], ["camera", "Camera", "▣"], ["devices", "Devices", "▣"], ["admin", "Admin", "⚙"]];
 
 export default function App() {
   const { data, live } = useLive();
@@ -21,6 +21,8 @@ export default function App() {
   const [cameraAIAlarm, setCameraAIAlarm] = useState(false);
   const [cameraAlarmDevice, setCameraAlarmDevice] = useState("Node 1");
   const devices = data?.devices ?? [];
+  // Thresholds always come from the backend (main.py). DEMO_TH is only a fallback.
+  const th = data?.thresholds || DEMO_TH;
   const worst = devices.filter((d) => d.online).reduce((a, d) => (d.level > (a?.level ?? 0) ? d : a), null);
   const cur = devices.find((d) => d.id === sel) ?? devices[0];
   const go = (t) => { setTab(t); location.hash = t; };
@@ -70,7 +72,7 @@ export default function App() {
     devices.forEach((d) => {
       next[d.id] = d.level;
       if (prev[d.id] !== undefined && d.level !== prev[d.id]) {
-        const text = d.level === 0 ? "Back to normal" : `CO ${d.co.toFixed(0)} ppm, PM2.5 ${d.pm25.toFixed(0)}${d.smoke ? ", smoke detected" : ""}`;
+        const text = d.level === 0 ? "Back to normal" : `Temp ${d.temp.toFixed(1)} °C, CO ${d.co.toFixed(1)} ppm, PM2.5 ${d.pm25.toFixed(0)}${d.smoke ? ", smoke detected" : ""}`;
         add.push({ t: new Date(), name: d.name, level: d.level, text });
         if (d.level >= 2) { setToast(`Fire alert: ${d.name}, ${text}`); setTimeout(() => setToast(""), 6000); }
       }
@@ -97,18 +99,18 @@ export default function App() {
           <>
             {tab === "overview" && (<>
               <NodePick devices={devices} sel={sel} setSel={setSel} />
-              {cur && <Cards d={cur} />}
-              <div className="two"><History device={cur?.id} /><div>
+              {cur && <Cards d={cur} th={th} />}
+              <div className="two"><History device={cur?.id} th={th} /><div>
                 <PacketCard data={data} />
                 <StatusCard data={data} devices={devices} />
               </div></div>
             </>)}
             {tab === "sensors" && <Sensors devices={devices} setSel={(i) => { setSel(i); go("overview"); }} />}
-            {tab === "history" && (<><NodePick devices={devices} sel={sel} setSel={setSel} /><History device={cur?.id} /></>)}
+            {tab === "history" && (<><NodePick devices={devices} sel={sel} setSel={setSel} /><History device={cur?.id} th={th} /></>)}
             {tab === "alerts" && <Alerts log={log} />}
             {tab === "camera" && <Camera />}
             {tab === "devices" && <div className="two"><StatusCard data={data} devices={devices} /><PacketCard data={data} /></div>}
-            {tab === "admin" && <Admin admin={admin} setAdmin={setAdmin} sel={sel} />}
+            {tab === "admin" && <Admin admin={admin} setAdmin={setAdmin} sel={sel} th={th} />}
           </>
         )}
       </main>
@@ -191,20 +193,23 @@ function Banner({ worst, compact }) {
   );
 }
 
-function Cards({ d }) {
+function Cards({ d, th }) {
+  const T = th || DEMO_TH;
+  // crit at the fire threshold, warn at the warning threshold (same as main.py)
+  const lvl = (v, warn, fire) => (v >= fire ? "crit" : v >= warn ? "warn" : "");
   const C = ({ label, v, unit, cls }) => <div className={"card " + (cls || "")}><div className="lbl">{label}</div><div className="val mono">{v}<small>{unit}</small></div></div>;
   return (
     <div className="grid">
-      <C label="Carbon monoxide" v={d.co.toFixed(1)} unit="ppm" cls={d.co >= 50 ? "crit" : d.co >= 25 ? "warn" : ""} />
-      <C label="Temperature" v={d.temp.toFixed(1)} unit="°C" cls={d.temp >= 65 ? "crit" : d.temp >= 55 ? "warn" : ""} />
-      <C label="PM2.5" v={d.pm25.toFixed(0)} unit="µg/m³" cls={d.pm25 >= 200 ? "crit" : d.pm25 >= 100 ? "warn" : ""} />
-      <C label="PM10" v={d.pm10.toFixed(0)} unit="µg/m³" cls={d.pm10 >= 250 ? "crit" : d.pm10 >= 150 ? "warn" : ""} />
+      <C label="Carbon monoxide" v={d.co.toFixed(1)} unit="ppm" cls={lvl(d.co, T.co_warn, T.co_fire)} />
+      <C label="Temperature" v={d.temp.toFixed(1)} unit="°C" cls={lvl(d.temp, T.temp_warn, T.temp_fire)} />
+      <C label="PM2.5" v={d.pm25.toFixed(0)} unit="µg/m³" cls={lvl(d.pm25, T.pm25_warn, T.pm25_fire)} />
+      <C label="PM10" v={d.pm10.toFixed(0)} unit="µg/m³" cls={lvl(d.pm10, T.pm10_warn, T.pm10_fire)} />
       <div className={"card " + (d.smoke ? "crit" : "")}><div className="lbl">Smoke / fire</div><div className="val" style={{ marginTop: 4 }}><span className={"pill " + (d.smoke ? "crit" : "")}>{d.smoke ? "Detected" : "None"}</span></div></div>
     </div>
   );
 }
 
-function History({ device, latest }) {
+function History({ device, th }) {
   const [range, setRange] = useState("1h");
   const [metric, setMetric] = useState("co");
   const [pts, setPts] = useState([]);
@@ -217,12 +222,20 @@ function History({ device, latest }) {
     return () => { off = true; clearInterval(h); };
   }, [device, range, metric]);
 
-  const W = 600, H = 190, L = 34, B = 20, T = 8;
-  const mx = Math.max(...pts, 1) * 1.15;
+  const T = th || DEMO_TH;
+  // [warning line, fire line] for the selected metric, taken from the backend
+  const lims = {
+    co: [T.co_warn, T.co_fire],
+    temp: [T.temp_warn, T.temp_fire],
+    pm25: [T.pm25_warn, T.pm25_fire],
+    pm10: [T.pm10_warn, T.pm10_fire],
+  }[metric] || [];
+
+  const W = 600, H = 190, L = 34, B = 20, PT = 8;
+  const mx = Math.max(...pts, lims[0] || 0, 1) * 1.15;
   const x = (i) => L + (W - L - 6) * i / Math.max(pts.length - 1, 1);
-  const y = (v) => T + (H - T - B) * (1 - v / mx);
+  const y = (v) => PT + (H - PT - B) * (1 - v / mx);
   const path = pts.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(" ");
-  const lim = { co: 25, temp: 55, pm25: 100, pm10: 150 }[metric] ?? null;
   const lbl = { "1h": ["60 min ago", "30", "now"], "24h": ["24 h ago", "12 h", "now"], "7d": ["7 days ago", "3.5 d", "now"] }[range];
 
   return (
@@ -232,7 +245,9 @@ function History({ device, latest }) {
       <div className="chips">{Object.entries(METRICS).map(([k, v]) => <button key={k} className={k === metric ? "on" : ""} onClick={() => setMetric(k)}>{v}</button>)}</div>
       <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Sensor history chart">
         {[0, 1, 2, 3].map((k) => <g key={k}><line x1={L} x2={W} y1={y(mx * k / 3)} y2={y(mx * k / 3)} stroke="var(--line)" /><text className="ax" x="2" y={y(mx * k / 3) + 3}>{(mx * k / 3).toFixed(0)}</text></g>)}
-        {lim && lim < mx && <line x1={L} x2={W} y1={y(lim)} y2={y(lim)} stroke="var(--warn)" strokeDasharray="4 4" />}
+        {lims.map((v, i) => v < mx && (
+          <line key={i} x1={L} x2={W} y1={y(v)} y2={y(v)} stroke={i ? "#c62828" : "var(--warn)"} strokeDasharray="4 4" />
+        ))}
         <text className="ax" x={L} y="186">{lbl[0]}</text><text className="ax" x={W / 2} y="186">{lbl[1]}</text><text className="ax" x={W - 24} y="186">{lbl[2]}</text>
         <path d={path} fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinejoin="round" />
       </svg>
@@ -244,12 +259,9 @@ function History({ device, latest }) {
   );
 }
 
-function Admin({ admin, setAdmin, sel }) {
+function Admin({ admin, setAdmin, sel, th }) {
   const [pw, setPw] = useState("");
   const [err, setErr] = useState("");
-  const [cfg, setCfg] = useState({ co_warn: 35, co_crit: 100, pm25_warn: 55, offline_min: 5 });
-  const [saved, setSaved] = useState("");
-  useEffect(() => { if (admin && !DEMO) get("/api/v1/config").then(setCfg).catch(() => {}); }, [admin]);
 
   if (!admin) return (
     <div className="card">
@@ -259,14 +271,20 @@ function Admin({ admin, setAdmin, sel }) {
       {err && <p className="sub">{err}</p>}
     </div>
   );
-  const F = ({ k, label }) => <div className="row"><span>{label}</span><input type="number" value={cfg[k]} onChange={(e) => setCfg({ ...cfg, [k]: +e.target.value })} /></div>;
+
+  const T = th || DEMO_TH;
+  const R = ({ label, warn, fire, unit }) => (
+    <div className="row"><span>{label}</span><span className="mono">warning {warn} · fire {fire} {unit}</span></div>
+  );
   return (
     <>
       <div className="card">
         <h2>Alert thresholds</h2>
-        <F k="co_warn" label="CO warning (ppm)" /><F k="co_crit" label="CO critical (ppm)" />
-        <F k="pm25_warn" label="PM2.5 warning (µg/m³)" /><F k="offline_min" label="Offline after (minutes)" />
-        <p><button onClick={() => (DEMO ? Promise.resolve() : put("/api/v1/config", cfg)).then(() => setSaved("Saved"), () => setSaved("Could not save"))}>Save changes</button> <span className="sub">{saved}</span></p>
+        <R label="Temperature" warn={T.temp_warn} fire={T.temp_fire} unit="°C" />
+        <R label="Carbon monoxide" warn={T.co_warn} fire={T.co_fire} unit="ppm" />
+        <R label="PM2.5" warn={T.pm25_warn} fire={T.pm25_fire} unit="µg/m³" />
+        <R label="PM10" warn={T.pm10_warn} fire={T.pm10_fire} unit="µg/m³" />
+        <p className="sub">These values are set in main.py on the server. Change them there and redeploy.</p>
       </div>
       {DEMO && (
         <div className="card" style={{ marginTop: 10 }}>
@@ -370,7 +388,7 @@ function Camera() {
           <div><div className="lbl">Fire probability</div><b className="mono">{percent(latest.fire_probability)}</b></div>
           <div><div className="lbl">Device</div><b className="mono">{latest.device_id || "—"}</b></div>
         </div>
-        <p className="sub mono">Captured: {capturedAt(latest) ? new Date(capturedAt(latest)).toLocaleString() : "Time unavailable"}{" "}           {ageMin !== null && ageMin > 5 && <span className="pill off">No new snapshot for {ageText}</span>}</p>
+        <p className="sub mono">Captured: {capturedAt(latest) ? new Date(capturedAt(latest)).toLocaleString() : "Time unavailable"}{" "}{ageMin !== null && ageMin > 5 && <span className="pill off">No new snapshot for {ageText}</span>}</p>
       </div>
 
       <div className="card">
