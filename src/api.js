@@ -35,7 +35,8 @@ export async function login(password) {
     return true;
   }
 
-  const r = await fetch(API + "/api/v1/auth/login", {
+  // main.py exposes POST /api/v1/admin/login and returns { token, expires_hours }
+  const r = await fetch(API + "/api/v1/admin/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ password }),
@@ -43,7 +44,7 @@ export async function login(password) {
 
   if (!r.ok) return false;
 
-  token = (await r.json()).access_token;
+  token = (await r.json()).token;
   sessionStorage.setItem("fs_token", token);
   return true;
 }
